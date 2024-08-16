@@ -1,3 +1,20 @@
+/*
+短径算法仍然有问题，主要是延长倍数t2计算有问题，但是在t2+0.5后很离奇的正确了，并且两个stl文件都适用
+短径计算我先后尝试了三种办法：
+    （1） 切片后直接找切片内部最大距离，但我很快发现这种办法找到的线段不与长径相交，原理上就有问题
+    （2） 第二个办法，我想着切片后对每个切片单独运行2d凸包短径算法，但是遇到了如下问题
+        1.cutter生成的polydata里面包含的points全是三维的，这导致我们必须投影再套算法 
+        2.长径作为法向量并不平行于任一坐标轴，因此投影后会造成无法映射回三维造成信息丢失，但我们可以建立映射表
+        3.这个问题没能解决，2d情况下我们也知道，短径计算时大部分情况无法做到点对点，必须计算交点，但是新产生的交点不在映射表中，我们只能找一个最近的投影后点映射回去，这又导致了误差，短径无法与长径相交
+    （3） 直接建立三维凸壳，由于我们的cutter数据虽然是三维的，但是其本质上只是一个位于三维坐标系的二维平面，因此可以计算，只不过向量计算比较复杂，也因此遇到了目前的问题
+        1.计算的短径绝对是对的，但是没有正确延伸到另一边，而是与长径相交后就不延伸了，这一定有蹊跷
+        2.在t2+0.5后很离奇的正确了，并且两个stl文件都适用，我目前正在debug
+
+
+*/
+
+
+
 #include <vtkSmartPointer.h>
 #include <vtkRendererCollection.h>
 #include <vtkPointPicker.h>
@@ -211,7 +228,7 @@ double compute_shortest_axis_with_pointOnPlane(const std::vector<Point>& pointsO
             //if(t2>max_t2) max_t2 = t2;
             // 如果t1在[0,1]范围内，表示延长线与边相交
             if (t1 >= 0 && t1 <= 1 && t2 >= 0 && t2 <= 1) {
-                Eigen::Vector3d intersection = vecP + t2 * direction;
+                Eigen::Vector3d intersection = vecP + (t2+0.5) * direction;
                 double dist = (intersection - vecP).norm();
                 if (dist > max_distance) {
                     max_distance = dist;
@@ -232,7 +249,7 @@ double compute_shortest_axis_with_pointOnPlane(const std::vector<Point>& pointsO
 
 int main(int, char*[]) {
     vtkSmartPointer<vtkSTLReader> reader = vtkSmartPointer<vtkSTLReader>::New();
-    reader->SetFileName("C:/code/extract3d/stl/2.stl");
+    reader->SetFileName("C:/code/extract3d/stl/3.stl");
     reader->Update();
 
     vtkSmartPointer<vtkPolyData> data = reader->GetOutput();
