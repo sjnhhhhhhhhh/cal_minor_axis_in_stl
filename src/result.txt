@@ -1,0 +1,21 @@
+1 1268.7435302734375
+  Calculated long diameter: 3.22432
+  Calculated short diameter: 2.65489
+2 1269.2435302734375
+  Calculated long diameter: 4.09044
+  Calculated short diameter: 3.15165
+3 1269.7435302734375
+  Calculated long diameter: 4.24973
+  Calculated short diameter: 3.09901
+4 1270.2435302734375
+  Calculated long diameter: 3.82857
+  Calculated short diameter: 2.80759
+5 1270.7435302734375
+  Calculated long diameter: 3.16086
+  Calculated short diameter: 2.38841
+6 1271.2435302734375
+  Calculated long diameter: 2.53395
+  Calculated short diameter: 1.86407
+7 1271.7435302734375
+  Calculated long diameter: 0.936654
+  Calculated short diameter: 0.546753
