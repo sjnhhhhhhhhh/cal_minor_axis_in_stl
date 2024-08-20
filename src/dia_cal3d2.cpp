@@ -246,10 +246,24 @@ double compute_shortest_axis_with_pointOnPlane(const std::vector<Point>& pointsO
     return max_distance;
 }
 
+Eigen::Vector3d cal_normal(Point p1,Point p2,Point p3,Point p4)
+{
+    Eigen::Vector3d p1_vec = pointToVector3d(p1);
+    Eigen::Vector3d p2_vec = pointToVector3d(p2);
+    Eigen::Vector3d p3_vec = pointToVector3d(p3);
+    Eigen::Vector3d p4_vec = pointToVector3d(p4);
+    Eigen::Vector3d orient_major = p2_vec - p1_vec;
+    Eigen::Vector3d orient_minor = p4_vec - p3_vec;
+    Eigen::Vector3d normal = orient_major.cross(orient_minor);
+    normal.normalize();
+
+    return normal;
+}
+
 
 int main(int, char*[]) {
     vtkSmartPointer<vtkSTLReader> reader = vtkSmartPointer<vtkSTLReader>::New();
-    reader->SetFileName("C:/code/extract3d/stl/3.stl");
+    reader->SetFileName("C:/code/extract3d/stl/2.stl");
     reader->Update();
 
     vtkSmartPointer<vtkPolyData> data = reader->GetOutput();
@@ -305,6 +319,20 @@ int main(int, char*[]) {
 
     output1(dis_long, p1, p2);
     output2(max_minor, p3max, p4max);
+    auto normal2 = cal_normal(p1,p2,p3max, p4max);
+    // 输出文件路径
+    std::string output_file_path = "C:/code/extract3d/src/result_3d.txt";
+    std::ofstream output_file(output_file_path);
+    if (!output_file.is_open()) {
+        std::cerr << "Error opening output file: " << output_file_path << std::endl;
+        return 1;
+    }
+    output_file << "normal:" << "(" << normal2.x() << "," << normal2.y() << "," << normal2.z() << ")" << "\n"
+                << "major_axis p1:" << "(" << p1.x << "," << p1.y << "," << p1.z << ")" << "\n"
+                << "major_axis p2:" << "(" << p2.x << "," << p2.y << "," << p2.z << ")" << "\n"
+                << "minor_axis p3:" << "(" << p3max.x << "," << p3max.y << "," << p3max.z << ")" << "\n"
+                << "minor_axis p4:" << "(" << p4max.x << "," << p4max.y << "," << p4max.z << ")" << "\n" ;
+
 
     // 创建映射器和演员
     vtkSmartPointer<vtkPolyDataMapper> mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
@@ -317,7 +345,7 @@ int main(int, char*[]) {
     // 创建渲染器、渲染窗口和交互器
     vtkSmartPointer<vtkRenderer> renderer = vtkSmartPointer<vtkRenderer>::New();
     vtkSmartPointer<vtkRenderWindow> renderWindow = vtkSmartPointer<vtkRenderWindow>::New();
-    renderWindow->SetWindowName("STL Model Display");
+    renderWindow->SetWindowName("STL显示yeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
     renderWindow->AddRenderer(renderer);
     
     vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor = vtkSmartPointer<vtkRenderWindowInteractor>::New();
