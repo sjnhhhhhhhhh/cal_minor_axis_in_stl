@@ -12,7 +12,7 @@
 
         问题修正1：凸包合成的其实是错的，现在以及按照顺时针生成了有序的切片边界点集
         问题修正2：t2和t1的逻辑顺序起初有一点点浪费内存，现在改进了
-        问题修正3：交点的计算逻辑现在正确了，可能是之前的表达式有错误，现在仿照2d的点到直线距离写了一版没问题
+        问题修正3：交点的计算逻辑现在正确了，之前由于存在误差，导致短径并没有和边真正相交，这就导致短径怎么延伸都找不到交点，现在改成了2d找算法，相当于是重新定了一个相对坐标系，然后忽略z轴进行计算
         
 
 
@@ -387,7 +387,7 @@ Eigen::Vector3d cal_normal(Point p1,Point p2,Point p3,Point p4)
 
 int main(int, char*[]) {
     vtkSmartPointer<vtkSTLReader> reader = vtkSmartPointer<vtkSTLReader>::New();
-    reader->SetFileName("C:/code/extract3d/stl/3.stl");
+    reader->SetFileName("C:/code/extract3d/stl/1.stl");
     reader->Update();
 
     vtkSmartPointer<vtkPolyData> data = reader->GetOutput();
