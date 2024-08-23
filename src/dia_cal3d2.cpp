@@ -31,6 +31,7 @@
 #include <vtkUnstructuredGrid.h>
 #include <vtkCommand.h>
 #include <vtkCamera.h>
+#include <chrono>
 
 using Eigen::Vector2d;
 
@@ -161,6 +162,28 @@ vtkSmartPointer<vtkPolyData> cutWithPlane(const vtkSmartPointer<vtkPolyData>& in
     return cutter->GetOutput();
 }
 
+// 优化切割+短径计算
+vtkSmartPointer<vtkPolyData> improved_cut(const vtkSmartPointer<vtkPolyData>& inputData, const Eigen::Vector3d& pointOnPlane, const Eigen::Vector3d& normal, double* mbounds,const double& bounds_size) {
+    vtkSmartPointer<vtkPlane> plane = vtkSmartPointer<vtkPlane>::New();
+    plane->SetOrigin(pointOnPlane.x(), pointOnPlane.y(), pointOnPlane.z());
+    plane->SetNormal(normal.x(), normal.y(), normal.z());
+
+    vtkSmartPointer<vtkCutter> cutter = vtkSmartPointer<vtkCutter>::New();
+    cutter->SetCutFunction(plane);
+    cutter->SetInputData(inputData);
+    cutter->Update();
+    // 提取切片包围盒
+    vtkSmartPointer<vtkPolyData> cutData = cutter->GetOutput();
+
+    
+    
+
+
+
+
+    return cutter->GetOutput();
+}
+
 
 Eigen::Vector3d cal_normal(Point p1,Point p2,Point p3,Point p4)
 {
@@ -178,6 +201,8 @@ Eigen::Vector3d cal_normal(Point p1,Point p2,Point p3,Point p4)
 
 
 int main(int, char*[]) {
+    // 获取开始时间点
+    auto start = std::chrono::high_resolution_clock::now();
     vtkSmartPointer<vtkSTLReader> reader = vtkSmartPointer<vtkSTLReader>::New();
     reader->SetFileName("C:/code/extract3d/stl/3.stl");
     reader->Update();
@@ -208,6 +233,7 @@ int main(int, char*[]) {
     Point p4max;
     std::vector<double> max_t2_list;
     Eigen::Vector3d vecQ1,vecQ2;
+    double bounds_size[3];
 
 
     for (double t = 0.0; t <= (p2_vec - p1_vec).norm(); t += step) {
@@ -219,8 +245,24 @@ int main(int, char*[]) {
 
         vtkSmartPointer<vtkPolyData> cutData = cutWithPlane(data, pointOnPlane, normal);
 
+        double bounds[6];
+        cutData->GetBounds(bounds);
+        double size_x = bounds[1] - bounds[0];
+        double size_y = bounds[3] - bounds[2];
+        double size_z = bounds[5] - bounds[4];
+        //如果切片整体大于目前最大切片，就更新最大切片
+        //如果切片整体小于最大切片，那就直接跳过
+        //其他情况不变
+        if (size_x > bounds_size[0] && size_y > bounds_size[1] && size_z > bounds_size[2]){
+            bounds_size[0] = size_x;
+            bounds_size[1] = size_y;
+            bounds_size[2] = size_z;
+        }
+        else if (size_x < bounds_size[0] && size_y < bounds_size[1] && size_z < bounds_size[2]){
+            continue;
+        }
 
-
+//2047529
 
         auto [minor,p3,p4] = cal_minor(cutData);
 
@@ -248,7 +290,14 @@ int main(int, char*[]) {
                 << "major_axis p2:" << "(" << p2.x << "," << p2.y << "," << p2.z << ")" << "\n"
                 << "minor_axis p3:" << "(" << p3max.x << "," << p3max.y << "," << p3max.z << ")" << "\n"
                 << "minor_axis p4:" << "(" << p4max.x << "," << p4max.y << "," << p4max.z << ")" << "\n" ;
+    // 获取结束时间点
+    auto end = std::chrono::high_resolution_clock::now();
 
+    // 计算耗时（以微秒为单位）
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    // 打印耗时
+    std::cout << "Elapsed time: " << duration.count() << " microseconds" << std::endl;
 
     // 创建映射器和演员
     vtkSmartPointer<vtkPolyDataMapper> mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
