@@ -430,7 +430,7 @@ int main(int, char*[]) {
         Eigen::Vector3d normal = major_axis;  // 这里使用长径的方向作为法向量
 
         vtkSmartPointer<vtkPolyData> cutData = cutWithPlane(data, pointOnPlane, normal);
-/*
+
         double bounds[6];
         cutData->GetBounds(bounds);
         double size_x = bounds[1] - bounds[0];
@@ -447,7 +447,7 @@ int main(int, char*[]) {
         else if (size_x < bounds_size[0] && size_y < bounds_size[1] && size_z < bounds_size[2]){
             continue;
         }
-*/
+
         auto points = ordered_points(cutData); //切片的顺时针有序点集
         //auto points_hull = convex_hull(cutData); 
 
