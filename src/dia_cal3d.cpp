@@ -428,7 +428,7 @@ int main(int, char*[]) {
         vtkSmartPointer<vtkPolyData> cutData = cutWithPlane(data, pointOnPlane, normal);
 
         auto points = ordered_points(cutData); //切片的顺时针有序点集
-        auto points_hull = convex_hull(cutData); //瞎几把合的凸包，什么逼玩意儿不是，对比用的，bug修好了就给丫注释了
+        auto points_hull = convex_hull(cutData); 
 
         Point p3,p4;
         

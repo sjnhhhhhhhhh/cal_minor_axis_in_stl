@@ -1,24 +1,3 @@
-/*
-短径算法仍然有问题，主要是延长倍数t2计算有问题
-短径计算我先后尝试了三种办法：
-    （1） 切片后直接找切片内部最大距离，但我很快发现这种办法找到的线段不与长径相交，原理上就有问题
-    （2） 第二个办法，我想着切片后对每个切片单独运行2d凸包短径算法，但是遇到了如下问题
-        1.cutter生成的polydata里面包含的points全是三维的，这导致我们必须投影再套算法 
-        2.长径作为法向量并不平行于任一坐标轴，因此投影后会造成无法映射回三维造成信息丢失，但我们可以建立映射表
-        3.这个问题没能解决，2d情况下我们也知道，短径计算时大部分情况无法做到点对点，必须计算交点，但是新产生的交点不在映射表中，我们只能找一个最近的投影后点映射回去，这又导致了误差，短径无法与长径相交
-    （3） 直接建立三维凸壳，由于我们的cutter数据虽然是三维的，但是其本质上只是一个位于三维坐标系的二维平面，因此可以计算，只不过向量计算比较复杂，也因此遇到了目前的问题
-        1.计算的短径绝对是对的，但是没有正确延伸到另一边，超出去了，但我的t2是解方程求得的表达式，不可能出错
-        2.在限定t2范围到[0,1]，然后再t2+0.5后很离奇的正确了，最离奇的是直接设定1.5 x direction并不对，说明t2并不是简单的=1了，我目前正在debug
-
-        问题修正1：凸包合成的其实是错的，现在以及按照顺时针生成了有序的切片边界点集
-        问题修正2：t2和t1的逻辑顺序起初有一点点浪费内存，现在改进了
-        
-
-
-*/
-
-
-
 #include <vtkSmartPointer.h>
 #include <vtkRendererCollection.h>
 #include <vtkPointPicker.h>
@@ -139,6 +118,21 @@ std::tuple<double, Point, Point> cal_majoraxis(const std::vector<Point>& pointsv
     return std::tuple<double, Point, Point>(max, p1max, p2max);
 }
 
+// 计算短径
+std::tuple<double,Point,Point> cal_minor(const vtkSmartPointer<vtkPolyData>& cutData)
+{   
+    std::vector<Point> Points;
+    vtkSmartPointer<vtkPoints> points = cutData->GetPoints();
+    for (vtkIdType i = 0; i < points->GetNumberOfPoints(); ++i){
+        double point[3];
+        points->GetPoint(i,point);
+        Point point1(point[0],point[1],point[2]);
+        Points.push_back(point1);
+    }
+    auto [minor,p3,p4] = cal_majoraxis(Points);
+    return std::tuple<double,Point,Point> (minor,p3,p4);
+}
+
 // 输出径信息
 void output1(const double &dis_long, const Point &p1, const Point &p2) {
     std::cout << "point1:(" << p1.x << "," << p1.y << "," << p1.z << ")\n";
@@ -166,228 +160,7 @@ vtkSmartPointer<vtkPolyData> cutWithPlane(const vtkSmartPointer<vtkPolyData>& in
 
     return cutter->GetOutput();
 }
-//合成三维凸包
-std::vector<Point> convex_hull(const vtkSmartPointer<vtkPolyData>& cutData) {
-    vtkSmartPointer<vtkPoints> points = cutData->GetPoints();
-    if (!points || points->GetNumberOfPoints() < 4) {
-        std::cerr << "Not enough points to compute a 3D convex hull." << std::endl;
-        return std::vector<Point>();  // 返回一个空的点集
-    }
 
-    // 使用 Delaunay3D 生成三维凸包
-    vtkSmartPointer<vtkDelaunay3D> delaunay = vtkSmartPointer<vtkDelaunay3D>::New();
-    delaunay->SetInputData(cutData);
-    delaunay->Update();
-
-    vtkSmartPointer<vtkUnstructuredGrid> convexHull = delaunay->GetOutput();
-
-    // 提取凸包点集
-    std::vector<Point> pointsOnHull;
-    vtkSmartPointer<vtkPoints> hullPoints = convexHull->GetPoints();
-    for (vtkIdType i = 0; i < hullPoints->GetNumberOfPoints(); ++i) {
-        double p[3];
-        hullPoints->GetPoint(i, p);
-        pointsOnHull.emplace_back(p[0], p[1], p[2]);
-    }
-
-    return pointsOnHull;
-}
-
-std::vector<Point> ordered_points(const vtkSmartPointer<vtkPolyData>& cutData)//返回顺时针排列的切片边界点集
-{
-    vtkSmartPointer<vtkPoints> points = cutData->GetPoints();
-    vtkSmartPointer<vtkCellArray> lines = cutData->GetLines();
-
-    // 使用 unordered_map 存储连接关系
-    std::unordered_map<vtkIdType, std::vector<vtkIdType>> pointAdjacency;
-
-    lines->InitTraversal();
-    vtkIdType npts;
-    vtkIdType const* pts;
-    while (lines->GetNextCell(npts, pts)) {
-        for (vtkIdType i = 0; i < npts - 1; i++) {
-            pointAdjacency[pts[i]].push_back(pts[i+1]);
-            pointAdjacency[pts[i+1]].push_back(pts[i]);
-        }
-    }
-
-    // 从起点开始排序
-    vtkIdType startPoint = pointAdjacency.begin()->first; // 从任意一个点开始
-    std::vector<vtkIdType> orderedPoints;
-    orderedPoints.push_back(startPoint);
-
-    vtkIdType currentPoint = startPoint;
-    vtkIdType previousPoint = -1;
-
-    while (true) {
-        const auto& neighbors = pointAdjacency[currentPoint];
-        vtkIdType nextPoint = -1;
-
-        for (auto neighbor : neighbors) {
-            if (neighbor != previousPoint) {
-                nextPoint = neighbor;
-                break;
-            }
-        }
-
-        if (nextPoint == -1 || nextPoint == startPoint) break;
-
-        orderedPoints.push_back(nextPoint);
-        previousPoint = currentPoint;
-        currentPoint = nextPoint;
-    }
-
-    // 计算中心点
-    double centroid[3] = {0.0, 0.0, 0.0};
-    for (auto ptId : orderedPoints) {
-        double p[3];
-        points->GetPoint(ptId, p);
-        centroid[0] += p[0];
-        centroid[1] += p[1];
-        centroid[2] += p[2];
-    }
-    centroid[0] /= orderedPoints.size();
-    centroid[1] /= orderedPoints.size();
-    centroid[2] /= orderedPoints.size();
-
-    // 确定角度并排序
-    std::sort(orderedPoints.begin(), orderedPoints.end(),
-        [&points, &centroid](vtkIdType a, vtkIdType b) {
-            double pa[3], pb[3];
-            points->GetPoint(a, pa);
-            points->GetPoint(b, pb);
-            double angleA = atan2(pa[1] - centroid[1], pa[0] - centroid[0]);
-            double angleB = atan2(pb[1] - centroid[1], pb[0] - centroid[0]);
-            return angleA < angleB;  // 顺时针方向
-        }
-    );
-
-    // 转换为 std::vector<Point> 返回
-    std::vector<Point> result;
-    for (auto ptId : orderedPoints) {
-        double p[3];
-        points->GetPoint(ptId, p);
-        result.emplace_back(p[0], p[1], p[2]);
-    }
-
-    return result;
-}
-
-
-
-
-bool point_equal(Point p1, Eigen::Vector3d p2){
-    Eigen::Vector3d p1_vec(p1.x,p1.y,p1.z);
-    if (p1_vec.x() == p2.x() && p1_vec.y() == p2.y() && p1_vec.z() == p2.z()) return true;
-    else return false;
-}
-
-Eigen::Vector3d line_segment_intersection_3D(const Eigen::Vector3d& P1, const Eigen::Vector3d& P2,
-                                             const Eigen::Vector3d& Q1, const Eigen::Vector3d& Q2,
-                                             bool& intersects) {
-    Eigen::Vector3d r = P2 - P1;
-    Eigen::Vector3d s = Q2 - Q1;
-    Eigen::Vector3d PQ = Q1 - P1;
-
-    Eigen::Matrix2d A;
-    A << r.x(), -s.x(),
-         r.y(), -s.y();
-
-    Eigen::Vector2d B(PQ.x(), PQ.y());
-
-    // 解方程组
-    if (A.determinant() != 0) {
-        Eigen::Vector2d t_u = A.inverse() * B;
-        double t = t_u.x();
-        double u = t_u.y();
-
-        if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
-            intersects = true;
-            return P1 + t * r;
-        }
-    }
-
-    intersects = false;
-    return Eigen::Vector3d(std::numeric_limits<double>::lowest(), 
-                           std::numeric_limits<double>::lowest(), 
-                           std::numeric_limits<double>::lowest());
-}
-
-
-
-std::tuple<double,Eigen::Vector3d,Eigen::Vector3d> compute_shortest_axis_with_pointOnPlane(const std::vector<Point>& pointsOnSlice, const Eigen::Vector3d& pointOnPlane, Point& short_p1, Point& short_p2, double &max_t2) {
-    double max_distance = 0.0;
-    Eigen::Vector3d mvecQ1,mvecQ2;
-    //double max_t2 = 0.0;
-    for (const auto& p : pointsOnSlice) {
-        Eigen::Vector3d vecP(p.x, p.y, p.z);//起点
-        //Eigen::Vector3d vecPointOnPlane(pointOnPlane.x, pointOnPlane.y, pointOnPlane.z);
-        Eigen::Vector3d direction = pointOnPlane - vecP;//线段方向（点到Pointonplane）
-
-        // 遍历凸包的所有边，找出与延长线的交点
-        for (size_t i = 0; i < pointsOnSlice.size(); ++i) {
-            const Point& q1 = pointsOnSlice[i];
-            if (point_equal(q1 , vecP)) continue; //保证当前遍历边和起点无关
-            const Point& q2 = pointsOnSlice[(i + 1) % pointsOnSlice.size()];  // Next point (circular)
-            if (point_equal(q2 , vecP)) continue;
-
-            Eigen::Vector3d vecQ1(q1.x, q1.y, q1.z);
-            Eigen::Vector3d vecQ2(q2.x, q2.y, q2.z);
-
-            Eigen::Vector3d segmentDir = vecQ2 - vecQ1; //边向量
-
-            Eigen::Vector3d crossProduct = direction.cross(segmentDir); //计算二者叉积
-
-            // 如果方向与边平行（即叉积接近零），跳过
-            if (crossProduct.norm() < 0.1) continue;
-
-            // 计算延长线与边的交点参数t1和t2
-            //边线段L1 = vecQ1 + t1*segmentDir
-            //垂直长径线段L2 = vecP + t2*direction
-            //联立两等式得到交点方程vecQ1 + t1*segmentDir = vecP + t2*direction
-            //求解可得t2 = (vecQ1-vecP) x direction/(direction x segmentdir)
-            
-            double t1 = (vecQ1 - pointOnPlane).cross(segmentDir).dot(crossProduct) / crossProduct.squaredNorm();//延长线是否与边产生交点，t2本身还承担边线段到交点所需延长倍数的作用
-            
-            //std::cout<<"start point: "<< vecP <<"\n";
-            //if(t2>max_t2) max_t2 = t2;
-            // 如果t1在[0,1]范围内，表示延长线与边相交
-
-            //t2<0说明反向延伸，0 < t2 < 1说明交点位于起点和长径之间，t2>1说明交点在过长径之后的延长线
-            if (t1 >= 0 && t1 <= 1) {
-                double t2 = (vecQ1 - vecP).cross(direction).dot(crossProduct) / crossProduct.squaredNorm();//交点在延长线方向上的位置，t2本身还承担垂直长径线段到交点所需延长倍数的作用
-                //std::cout << t2 << "\n";
-                if (t2 > 0){
-                    /*
-                    可以确认，在筛选t2范围后寻找的短径会发生改变
-                    这是肯定的，因为如果最大延伸倍数都不能到对边，那么我们肯定会找到一个距离长径最远的起点
-                    并且，在t2上限足以超界后，找到的短径也不相同
-                    */
-                    Eigen::Vector3d intersection = vecP + (t2) * direction;
-                    double dist = (intersection - vecP).norm();
-                    if (dist > max_distance) {
-                        //std::cout << "t1 = " << t1 << "\n";
-                        std::cout << "crossproduct = " << crossProduct << "\n";
-                        max_distance = dist;
-                        short_p1 = p;
-                        short_p2 = Point(intersection.x(), intersection.y(), intersection.z());
-                        mvecQ1 = vecQ1;
-                        mvecQ2 = vecQ2;
-                    }
-                    if (t2 > max_t2) max_t2 = t2;
-                }
-                
-            }
-        }
-        
-    }
-
-    //std::cout<<"start_point:"<<"("<<short_p1.x<<","<<short_p1.y<<","<<short_p1.z<<")\n";
-    //std::cout<<"inter_point:"<<"("<<short_p2.x<<","<<short_p2.y<<","<<short_p2.z<<")\n";
-    if (max_t2>=0.1) std::cout<<"max_t2="<<max_t2<<"\n";
-    
-    return std::make_tuple(max_distance, mvecQ1, mvecQ2);
-}
 
 Eigen::Vector3d cal_normal(Point p1,Point p2,Point p3,Point p4)
 {
@@ -406,7 +179,7 @@ Eigen::Vector3d cal_normal(Point p1,Point p2,Point p3,Point p4)
 
 int main(int, char*[]) {
     vtkSmartPointer<vtkSTLReader> reader = vtkSmartPointer<vtkSTLReader>::New();
-    reader->SetFileName("C:/code/extract3d/stl/19.stl");
+    reader->SetFileName("C:/code/extract3d/stl/3.stl");
     reader->Update();
 
     vtkSmartPointer<vtkPolyData> data = reader->GetOutput();
@@ -446,43 +219,22 @@ int main(int, char*[]) {
 
         vtkSmartPointer<vtkPolyData> cutData = cutWithPlane(data, pointOnPlane, normal);
 
-        auto points = ordered_points(cutData); //切片的顺时针有序点集
-        auto points_hull = convex_hull(cutData); //瞎几把合的凸包，什么逼玩意儿不是，对比用的，bug修好了就给丫注释了
 
-        Point p3,p4;
-        double max_t2 = 0.0;
 
-        auto [minor,mvecQ1,mvecQ2] = compute_shortest_axis_with_pointOnPlane(   points, 
-                                                                                pointOnPlane, 
-                                                                                p3, 
-                                                                                p4,
-                                                                                max_t2);
 
-        max_t2_list.push_back(max_t2);
+        auto [minor,p3,p4] = cal_minor(cutData);
+
 
         if (minor > max_minor) {
             max_minor = minor;
             p3max = p3;
             p4max = p4;
-            vecQ1 = mvecQ1;
-            vecQ2 = mvecQ2;
         }
         std::cout<<"max_minor="<<max_minor<<"\n";
     }
 
     output1(dis_long, p1, p2);
     output2(max_minor, p3max, p4max);
-
-    double max_t2_real = 0.0;
-    for (int i = 0; i < max_t2_list.size(); i++)
-    {
-        if (max_t2_list[i] > max_t2_real) max_t2_real = max_t2_list[i];
-    }
-
-
-    std::cout << "max_t2 = " << max_t2_real << "\n";
-    std::cout<<"vecQ1= "<<"("<<vecQ1.x()<<","<<vecQ1.y()<<","<<vecQ1.z()<<")\n";
-    std::cout<<"vecQ2= "<<"("<<vecQ2.x()<<","<<vecQ2.y()<<","<<vecQ2.z()<<")\n";
     auto normal2 = cal_normal(p1,p2,p3max, p4max);
     // 输出文件路径
     std::string output_file_path = "C:/code/extract3d/src/result_3d.txt";
