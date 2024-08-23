@@ -15,6 +15,8 @@
         问题修正3：交点的计算逻辑现在正确了，之前由于存在误差，导致短径并没有和边真正相交，这就导致短径怎么延伸都找不到交点，现在改成了2d找算法，相当于是重新定了一个相对坐标系，然后忽略z轴进行计算
         
 
+575959  17905892
+525441  15592840
 
 */
 
@@ -53,6 +55,7 @@
 #include <vtkUnstructuredGrid.h>
 #include <vtkCommand.h>
 #include <vtkCamera.h>
+#include <chrono>
 
 using Eigen::Vector2d;
 
@@ -386,8 +389,9 @@ Eigen::Vector3d cal_normal(Point p1,Point p2,Point p3,Point p4)
 
 
 int main(int, char*[]) {
+    auto start = std::chrono::high_resolution_clock::now();
     vtkSmartPointer<vtkSTLReader> reader = vtkSmartPointer<vtkSTLReader>::New();
-    reader->SetFileName("C:/code/extract3d/stl/1.stl");
+    reader->SetFileName("C:/code/extract3d/stl/3.stl");
     reader->Update();
 
     vtkSmartPointer<vtkPolyData> data = reader->GetOutput();
@@ -414,7 +418,7 @@ int main(int, char*[]) {
     double max_minor = 0;
     Point p3max;
     Point p4max;
-    
+    double bounds_size[3];
     Eigen::Vector3d vecQ1,vecQ2;
 
 
@@ -426,9 +430,26 @@ int main(int, char*[]) {
         Eigen::Vector3d normal = major_axis;  // 这里使用长径的方向作为法向量
 
         vtkSmartPointer<vtkPolyData> cutData = cutWithPlane(data, pointOnPlane, normal);
-
+/*
+        double bounds[6];
+        cutData->GetBounds(bounds);
+        double size_x = bounds[1] - bounds[0];
+        double size_y = bounds[3] - bounds[2];
+        double size_z = bounds[5] - bounds[4];
+        //如果切片整体大于目前最大切片，就更新最大切片
+        //如果切片整体小于最大切片，那就直接跳过
+        //其他情况不变
+        if (size_x > bounds_size[0] && size_y > bounds_size[1] && size_z > bounds_size[2]){
+            bounds_size[0] = size_x;
+            bounds_size[1] = size_y;
+            bounds_size[2] = size_z;
+        }
+        else if (size_x < bounds_size[0] && size_y < bounds_size[1] && size_z < bounds_size[2]){
+            continue;
+        }
+*/
         auto points = ordered_points(cutData); //切片的顺时针有序点集
-        auto points_hull = convex_hull(cutData); 
+        //auto points_hull = convex_hull(cutData); 
 
         Point p3,p4;
         
@@ -469,7 +490,14 @@ int main(int, char*[]) {
                 << "major_axis p2:" << "(" << p2.x << "," << p2.y << "," << p2.z << ")" << "\n"
                 << "minor_axis p3:" << "(" << p3max.x << "," << p3max.y << "," << p3max.z << ")" << "\n"
                 << "minor_axis p4:" << "(" << p4max.x << "," << p4max.y << "," << p4max.z << ")" << "\n" ;
+    // 获取结束时间点
+    auto end = std::chrono::high_resolution_clock::now();
 
+    // 计算耗时（以微秒为单位）
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    // 打印耗时
+    std::cout << "Elapsed time: " << duration.count() << " microseconds" << std::endl;
 
     // 创建映射器和演员
     vtkSmartPointer<vtkPolyDataMapper> mapper = vtkSmartPointer<vtkPolyDataMapper>::New();

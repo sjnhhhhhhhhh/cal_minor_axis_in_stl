@@ -204,7 +204,7 @@ int main(int, char*[]) {
     // 获取开始时间点
     auto start = std::chrono::high_resolution_clock::now();
     vtkSmartPointer<vtkSTLReader> reader = vtkSmartPointer<vtkSTLReader>::New();
-    reader->SetFileName("C:/code/extract3d/stl/3.stl");
+    reader->SetFileName("C:/code/extract3d/stl/16.stl");
     reader->Update();
 
     vtkSmartPointer<vtkPolyData> data = reader->GetOutput();
@@ -262,7 +262,8 @@ int main(int, char*[]) {
             continue;
         }
 
-//2047529
+//优化前2047529微秒  1063443
+//优化后2004719微妙，缩短0.4秒  1025676
 
         auto [minor,p3,p4] = cal_minor(cutData);
 
