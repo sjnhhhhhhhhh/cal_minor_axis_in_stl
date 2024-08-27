@@ -148,6 +148,12 @@ void output2(const double &dis_long, const Point &p1, const Point &p2) {
     std::cout << "distance:" << dis_long << std::endl;
 }
 
+void output3(const double &dis_long, const Point &p1, const Point &p2) {
+    std::cout << "point5:(" << p1.x << "," << p1.y << "," << p1.z << ")\n";
+    std::cout << "point6:(" << p2.x << "," << p2.y << "," << p2.z << ")\n";
+    std::cout << "distance:" << dis_long << std::endl;
+}
+
 // 切割
 vtkSmartPointer<vtkPolyData> cutWithPlane(const vtkSmartPointer<vtkPolyData>& inputData, const Eigen::Vector3d& pointOnPlane, const Eigen::Vector3d& normal) {
     vtkSmartPointer<vtkPlane> plane = vtkSmartPointer<vtkPlane>::New();
@@ -349,12 +355,71 @@ std::tuple<double,Point,Point> find_minor_in_new_plane(vtkSmartPointer<vtkPolyDa
 
 }
 
+bool point_equal(Point p1, Eigen::Vector3d p2){
+    Eigen::Vector3d p1_vec(p1.x,p1.y,p1.z);
+    if (p1_vec.x() == p2.x() && p1_vec.y() == p2.y() && p1_vec.z() == p2.z()) return true;
+    else return false;
+}
+
+std::tuple<double,Eigen::Vector3d,Eigen::Vector3d> compute_shortest_axis_with_pointOnPlane(const std::vector<Point>& pointsOnSlice, const Eigen::Vector3d& pointOnPlane, Point& short_p1, Point& short_p2) {
+    double max_distance = 0.0;
+    Eigen::Vector3d mvecQ1,mvecQ2;
+    //double max_t2 = 0.0;
+    for (const auto& p : pointsOnSlice) {
+        Eigen::Vector3d vecP(p.x, p.y, p.z);//起点
+        //Eigen::Vector3d vecPointOnPlane(pointOnPlane.x, pointOnPlane.y, pointOnPlane.z);
+        Eigen::Vector3d direction = pointOnPlane - vecP;//线段方向（点到Pointonplane）
+
+        // 遍历凸包的所有边，找出与延长线的交点
+        for (size_t i = 0; i < pointsOnSlice.size(); ++i) {
+            const Point& q1 = pointsOnSlice[i];
+            if (point_equal(q1 , vecP)) continue; //保证当前遍历边和起点无关
+            const Point& q2 = pointsOnSlice[(i + 1) % pointsOnSlice.size()];  // Next point (circular)
+            if (point_equal(q2 , vecP)) continue;
+
+            Eigen::Vector3d vecQ1(q1.x, q1.y, q1.z);
+            Eigen::Vector3d vecQ2(q2.x, q2.y, q2.z);
+
+            Eigen::Vector3d segmentDir = vecQ2 - vecQ1; //边向量
+
+            Eigen::Vector3d crossProduct = direction.cross(segmentDir); //计算二者叉积
+
+            // 如果方向与边平行（即叉积接近零），跳过
+            if (crossProduct.norm() < 0.1) continue;
+            auto [intersects,vecinter] = line_segment_intersection_3D(vecP - 100*direction,pointOnPlane + 100*direction,vecQ1,vecQ2);
+            if (intersects){
+                double dist = (vecinter - vecP).norm();
+                if (dist > max_distance) {
+                    //std::cout << "t1 = " << t1 << "\n";
+                    //std::cout << "crossproduct = " << crossProduct << "\n";
+                    max_distance = dist;
+                    short_p1 = p;
+                    short_p2 = Point(vecinter.x(), vecinter.y(), vecinter.z());
+                    mvecQ1 = vecQ1;
+                    mvecQ2 = vecQ2;
+                    
+                
+                }
+            }
+
+                
+            
+        }
+        
+    }
+
+    //std::cout<<"start_point:"<<"("<<short_p1.x<<","<<short_p1.y<<","<<short_p1.z<<")\n";
+    //std::cout<<"inter_point:"<<"("<<short_p2.x<<","<<short_p2.y<<","<<short_p2.z<<")\n";
+
+    
+    return std::make_tuple(max_distance, mvecQ1, mvecQ2);
+}
 
 int main(int, char*[]) {
     // 获取开始时间点
     auto start = std::chrono::high_resolution_clock::now();
     vtkSmartPointer<vtkSTLReader> reader = vtkSmartPointer<vtkSTLReader>::New();
-    reader->SetFileName("C:/code/extract3d/stl/16.stl");
+    reader->SetFileName("C:/code/extract3d/stl/2.stl");
     reader->Update();
 
     vtkSmartPointer<vtkPolyData> data = reader->GetOutput();
@@ -379,9 +444,11 @@ int main(int, char*[]) {
     major_axis.normalize();
     double step = 0.1;
     double max_minor = 0;
+    double max_major_minor = 0;
     Point p3max;
     Point p4max;
-    std::vector<double> max_t2_list;
+    Point p5,p6;
+    //std::vector<double> max_t2_list;
     Eigen::Vector3d vecQ1,vecQ2;
     double bounds_size[3];
     vtkSmartPointer<vtkPolyData> m_cutData = vtkSmartPointer<vtkPolyData>::New();
@@ -417,15 +484,30 @@ int main(int, char*[]) {
 //优化后2004719微妙，缩短0.4秒  1025676
 
         auto [minor,p3,p4] = cal_minor(cutData);
-        
-
-
+        auto points = ordered_points(cutData); //切片的顺时针有序点集
         if (minor > max_minor) {
             max_minor = minor;
             p3max = p3;
             p4max = p4;
             m_cutData = cutData;
         }
+        Point p5m,p6m;
+        auto [major_minor,mvecQ1,mvecQ2] = compute_shortest_axis_with_pointOnPlane(   points, 
+                                                                                pointOnPlane, 
+                                                                                p5m, 
+                                                                                p6m);
+        if (major_minor > max_major_minor){
+            max_major_minor = major_minor;
+            //Point p5vec(mvecQ1.x(),mvecQ1.y(),mvecQ1.z());
+            //Point p6vec(mvecQ2.x(),mvecQ2.y(),mvecQ2.z());
+            p5 = p5m;
+            p6 = p6m;
+        }
+
+        
+
+
+        
         std::cout<<"max_minor="<<max_minor<<"\n";
     }
     auto [subminor,sp3,sp4] = find_minor_in_new_plane(m_cutData,p3max,p4max,p1,p2);
@@ -434,6 +516,8 @@ int main(int, char*[]) {
     output1(dis_long, p1, p2);
     output2(max_minor, p3max, p4max);
     output2(subminor,sp3,sp4);
+    output3(max_major_minor, p5, p6);
+
     auto normal2 = cal_normal(p1,p2,p3max, p4max);
     // 输出文件路径
     std::string output_file_path = "C:/code/extract3d/src/result_3d.txt";
@@ -446,7 +530,9 @@ int main(int, char*[]) {
                 << "major_axis p1:" << "(" << p1.x << "," << p1.y << "," << p1.z << ")" << "\n"
                 << "major_axis p2:" << "(" << p2.x << "," << p2.y << "," << p2.z << ")" << "\n"
                 << "minor_axis p3:" << "(" << p3max.x << "," << p3max.y << "," << p3max.z << ")" << "\n"
-                << "minor_axis p4:" << "(" << p4max.x << "," << p4max.y << "," << p4max.z << ")" << "\n" ;
+                << "minor_axis p4:" << "(" << p4max.x << "," << p4max.y << "," << p4max.z << ")" << "\n" 
+                << "sub_minor_axis p3:" << "(" << sp3.x << "," << sp3.y << "," << sp3.z << ")" << "\n"
+                << "sub_minor_axis p4:" << "(" << sp4.x << "," << sp4.y << "," << sp4.z << ")" << "\n" ;
     // 获取结束时间点
     auto end = std::chrono::high_resolution_clock::now();
 
@@ -513,10 +599,23 @@ int main(int, char*[]) {
     subminorLineActor->SetMapper(subminorLineMapper);
     subminorLineActor->GetProperty()->SetColor(0.0, 0.0, 1.0); // 蓝色
 
+    // 创建过major短径的线段
+    vtkSmartPointer<vtkLineSource> majorminorLine = vtkSmartPointer<vtkLineSource>::New();
+    majorminorLine->SetPoint1(p5.x, p5.y, p5.z);
+    majorminorLine->SetPoint2(p6.x, p6.y, p6.z);
+    
+    vtkSmartPointer<vtkPolyDataMapper> majorminorLineMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+    majorminorLineMapper->SetInputConnection(majorminorLine->GetOutputPort());
+    
+    vtkSmartPointer<vtkActor> majorminorLineActor = vtkSmartPointer<vtkActor>::New();
+    majorminorLineActor->SetMapper(majorminorLineMapper);
+    majorminorLineActor->GetProperty()->SetColor(1.0, 0.0, 1.0); // 紫色
+
     // 添加长短径演员到渲染器
     renderer->AddActor(majorLineActor);
     renderer->AddActor(minorLineActor);
     renderer->AddActor(subminorLineActor);
+    renderer->AddActor(majorminorLineActor);
 
     // 调整摄像机视角，使得模型和坐标轴都能正确显示
     //renderer->ResetCamera();
